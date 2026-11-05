@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server"; // Import NextResponse from Next.js for handling responses
-import OpenAI from "openai"; // Import OpenAI library for interacting with the OpenAI API
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
-// System prompt for the AI, providing guidelines on how to respond to users
 const systemPrompt = `You are an AI-powered customer support assistant for HeadstarterAI, a platform that provides AI-powered interviews for software engineering jobs. Your role is to help users with questions about the platform, its features, and how to prepare for AI interviews. Please follow these guidelines:
 
 1. Be friendly, professional, and supportive in your interactions.
@@ -17,38 +16,95 @@ const systemPrompt = `You are an AI-powered customer support assistant for Heads
 
 Remember, your goal is to help users succeed in their software engineering interviews by making the most of HeadstarterAI's platform.`;
 
-// POST function andle incoming requests
 export async function POST(req) {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const data = await req.json();
+  const apiKey = process.env.OPENAI_API_KEY;
 
-  // Create a chat completion request to the OpenAI API
-  const completion = await openai.chat.completions.create({
-    messages: [{ role: "system", content: systemPrompt }, ...data], // Include the system prompt and user messages
-    model: "gpt-4o", // Model to use
-    stream: true, // Enable streaming
-  });
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: "Missing OPENAI_API_KEY environment variable." },
+      { status: 500 }
+    );
+  }
 
-  // Create a ReadableStream to handle the streaming response
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder(); // Create a TextEncoder to convert strings to Uint8Array
-      try {
-        // Iterate over the streamed chunks of the response
-        for await (const chunk of completion) {
-          const content = chunk.choices[0]?.delta?.content; // Extract the content from the chunk
-          if (content) {
-            const text = encoder.encode(content); // Encode the content to Uint8Array
-            controller.enqueue(text); // Enqueue the encoded text to the stream
+  try {
+    const body = await req.json();
+    const messages = Array.isArray(body) ? body : body?.messages;
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return NextResponse.json(
+        { error: "A valid messages array is required." },
+        { status: 400 }
+      );
+    }
+
+    const normalizedMessages = messages
+      .map((message) => {
+        const role = message?.role;
+        const content = typeof message?.content === "string"
+          ? message.content
+          : String(message?.content ?? "");
+
+        return {
+          role:
+            role === "user" || role === "assistant" || role === "system"
+              ? role
+              : "user",
+          content: content.trim(),
+        };
+      })
+      .filter((message) => message.content.length > 0);
+
+    if (normalizedMessages.length === 0) {
+      return NextResponse.json(
+        { error: "At least one message with content is required." },
+        { status: 400 }
+      );
+    }
+
+    const openai = new OpenAI({ apiKey });
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: "system", content: systemPrompt }, ...normalizedMessages],
+      model: "gpt-4o",
+      stream: true,
+    });
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+
+        try {
+          for await (const chunk of completion) {
+            const content = chunk.choices[0]?.delta?.content;
+
+            if (content) {
+              controller.enqueue(encoder.encode(content));
+            }
           }
+        } catch (error) {
+          console.error("Streaming chat response failed:", error);
+          controller.error(error);
+        } finally {
+          controller.close();
         }
-      } catch (err) {
-        controller.error(err); // Handle any errors that occur during streaming
-      } finally {
-        controller.close(); // Close the stream when done
-      }
-    },
-  });
+      },
+    });
 
-  return new NextResponse(stream); // Return the stream as the response
+    return new NextResponse(stream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+      },
+    });
+  } catch (error) {
+    console.error("Chat request failed:", error);
+
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Something went wrong while processing your message.",
+      },
+      { status: 500 }
+    );
+  }
 }

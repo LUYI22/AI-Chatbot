@@ -1,146 +1,238 @@
 "use client";
 
-import { Box, Button, Stack, TextField } from "@mui/material";
-import { useState, useRef, useEffect } from "react";
+import {
+  Box,
+  Button,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  TextField,
+} from "@mui/material";
+import { puter } from "@heyputer/puter.js";
+import ReactMarkdown from "react-markdown";
+import { useEffect, useRef, useState } from "react";
+
+const MODEL_OPTIONS = [
+  "gpt-6.1-sol",
+  "gpt-6-astra",
+  "gpt-6-luna",
+  "gpt-5.4-nano",
+  "gpt-6.1-sol-pro",
+];
+
+const INITIAL_MESSAGE = {
+  role: "assistant",
+  content: "Hi! I'm the AI support assistant. How can I help you today?",
+};
+
+const SYSTEM_PROMPT =
+  "You are a friendly, helpful AI support assistant. Give clear, practical answers.";
 
 export default function Home() {
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      content:
-        "Hi! I'm the Headstarter support assistant. How can I help you today?",
-    },
-  ]);
+  const [messages, setMessages] = useState([INITIAL_MESSAGE]);
   const [message, setMessage] = useState("");
+  const [selectedModel, setSelectedModel] = useState(MODEL_OPTIONS[0]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const messagesEndRef = useRef(null);
 
   const sendMessage = async () => {
-    if (!message.trim() || isLoading) return;
-    setIsLoading(true);
-    setMessage(""); // Clear the input field
-    setMessages((messages) => [
+    const userMessage = message.trim();
+    if (!userMessage || isLoading) return;
+
+    const conversation = messages
+      .filter(({ content }) => content.trim())
+      .slice(-8)
+      .map(({ role, content }) => ({ role, content }));
+    const nextMessages = [
       ...messages,
-      { role: "user", content: message }, // Add the user's message to the chat
-      { role: "assistant", content: "" }, // Add a placeholder for the assistant's response
-    ]);
+      { role: "user", content: userMessage },
+      { role: "assistant", content: "" },
+    ];
 
-    // Send the message to the server
-    const response = fetch("/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([...messages, { role: "user", content: message }]),
-    }).then(async (res) => {
-      const reader = res.body.getReader(); // Get a reader to read the response body
-      const decoder = new TextDecoder(); // Create a decoder to decode the response text
+    setIsLoading(true);
+    setError("");
+    setMessage("");
+    setMessages(nextMessages);
 
-      let result = "";
-      // Function to process the text from the response
-      return reader.read().then(function processText({ done, value }) {
-        if (done) {
-          return result;
+    try {
+      const response = await puter.ai.chat(
+        [{ role: "system", content: SYSTEM_PROMPT }, ...conversation, { role: "user", content: userMessage }],
+        { model: selectedModel, stream: true }
+      );
+
+      let assistantReply = "";
+
+      for await (const part of response) {
+        if (part?.type === "error") {
+          throw new Error(part.message || "The AI service returned an error.");
         }
-        const text = decoder.decode(value || new Uint8Array(), {
-          stream: true,
-        }); // Decode the text
-        setMessages((messages) => {
-          let lastMessage = messages[messages.length - 1]; // Get the last message (assistant's placeholder)
-          let otherMessages = messages.slice(0, messages.length - 1); // Get all other messages
-          return [
-            ...otherMessages,
-            { ...lastMessage, content: lastMessage.content + text }, // Append the decoded text to the assistant's message
-          ];
+
+        const text =
+          typeof part === "string"
+            ? part
+            : typeof part?.text === "string"
+              ? part.text
+              : "";
+
+        if (!text) continue;
+
+        assistantReply += text;
+        setMessages((currentMessages) => {
+          const updated = [...currentMessages];
+          const lastIndex = updated.length - 1;
+          updated[lastIndex] = { ...updated[lastIndex], content: assistantReply };
+          return updated;
         });
-        return reader.read().then(processText); // Continue reading the next chunk of the response
+      }
+
+      if (!assistantReply) {
+        throw new Error("The AI service returned an empty response.");
+      }
+    } catch (err) {
+      console.error("Puter AI request failed:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while sending your message."
+      );
+      setMessages((currentMessages) => {
+        const updated = [...currentMessages];
+        const lastIndex = updated.length - 1;
+        updated[lastIndex] = {
+          ...updated[lastIndex],
+          content: "Sorry, I couldn't respond right now. Please try again.",
+        };
+        return updated;
       });
-    });
-    setIsLoading(false);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleKeyPress = (event) => {
+  const startNewChat = () => {
+    if (isLoading) return;
+    setMessages([INITIAL_MESSAGE]);
+    setMessage("");
+    setError("");
+  };
+
+  const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       sendMessage();
     }
   };
 
-  const messagesEndRef = useRef(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   return (
-    <Box
-      width="100vw"
-      height="100vh"
-      display="flex"
-      flexDirection="column"
-      justifyContent="center"
-      alignItems="center"
-    >
-      <Stack
-        direction={"column"}
-        width="600px"
-        height="800px"
-        border="1px solid black"
-        p={2}
-        spacing={3}
-      >
-        <Stack
-          direction={"column"}
-          spacing={2}
-          flexGrow={1}
-          overflow="auto"
-          maxHeight="100%"
-        >
-          {messages.map((message, index) => (
-            <Box
-              key={index}
-              display="flex"
-              justifyContent={
-                message.role === "assistant" ? "flex-start" : "flex-end"
-              }
-            >
-              <Box
-                bgcolor={
-                  message.role === "assistant"
-                    ? "primary.main"
-                    : "secondary.main"
-                }
-                color="white"
-                borderRadius={16}
-                p={3}
+    <Box component="main" className="chat-page">
+      <Box className="chat-window">
+        <Box component="header" className="chat-header">
+          <Box className="brand">
+            <Box className="brand-mark" aria-hidden="true">✦</Box>
+            <Box>
+              <Box className="brand-title">AI Support</Box>
+              <Box className="brand-caption">Here to help, anytime</Box>
+            </Box>
+          </Box>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <FormControl size="small" className="model-control">
+              <InputLabel id="model-select-label">Model</InputLabel>
+              <Select
+                labelId="model-select-label"
+                value={selectedModel}
+                label="Model"
+                onChange={(event) => setSelectedModel(event.target.value)}
+                disabled={isLoading}
               >
-                {message.content}
+                {MODEL_OPTIONS.map((model) => (
+                  <MenuItem key={model} value={model}>
+                    {model}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Button
+              className="new-chat-button"
+              onClick={startNewChat}
+              disabled={isLoading}
+              variant="outlined"
+            >
+              New chat
+            </Button>
+          </Stack>
+        </Box>
+
+        <Stack className="message-list" spacing={2.5}>
+          {messages.map((chatMessage, index) => (
+            <Box
+              key={`${index}-${chatMessage.role}`}
+              className={`message-row ${chatMessage.role === "user" ? "user-row" : ""}`}
+            >
+              {chatMessage.role === "assistant" ? (
+                <Box className="assistant-avatar" aria-hidden="true">✦</Box>
+              ) : null}
+              <Box
+                className={`message-bubble ${chatMessage.role === "user" ? "user-bubble" : "assistant-bubble"}`}
+              >
+                {chatMessage.role === "assistant" ? (
+                  <ReactMarkdown>{chatMessage.content}</ReactMarkdown>
+                ) : (
+                  chatMessage.content
+                )}
+                {isLoading && index === messages.length - 1 && !chatMessage.content ? (
+                  <span className="typing-indicator" aria-label="Assistant is responding">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                ) : null}
               </Box>
             </Box>
           ))}
+          <div ref={messagesEndRef} />
         </Stack>
-        <Stack direction={"row"} spacing={2}>
+
+        {error ? (
+          <Box className="error-message" role="alert">
+            {error}
+          </Box>
+        ) : null}
+
+        <Box component="form" className="composer" onSubmit={(event) => {
+          event.preventDefault();
+          sendMessage();
+        }}>
           <TextField
-            label="Message"
+            className="message-input"
+            placeholder="Ask me anything..."
             fullWidth
+            multiline
+            maxRows={5}
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onChange={(event) => setMessage(event.target.value)}
+            onKeyDown={handleKeyDown}
             disabled={isLoading}
+            inputProps={{ "aria-label": "Message" }}
           />
           <Button
+            className="send-button"
+            type="submit"
             variant="contained"
-            onClick={sendMessage}
-            disabled={isLoading}
+            disabled={isLoading || !message.trim()}
+            aria-label="Send message"
           >
-            {isLoading ? "Sending..." : "Send"}
+            {isLoading ? "..." : "Send"}
           </Button>
-        </Stack>
-        <div ref={messagesEndRef} />
-      </Stack>
+        </Box>
+        <Box className="composer-hint">Enter to send · Shift + Enter for a new line</Box>
+      </Box>
     </Box>
   );
 }

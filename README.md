@@ -1,37 +1,51 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# AI Chatbox
 
-## Getting Started
+A Next.js chat interface that streams AI answers into a conversational support UI. The current prototype uses Puter.js in the browser, so it does not require the project owner to configure an AI API key or run an AI proxy server.
 
-First, run the development server:
+## Run locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## How this project works
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+- `app/page.js` renders the chat, model selector, message composer, and **New chat** action.
+- The browser calls `puter.ai.chat()` using the selected model and streams text chunks into the assistant message as they arrive.
+- The latest conversation turns are sent along with each prompt to give the assistant context. **New chat** clears that in-memory conversation.
+- `react-markdown` formats assistant replies, including lists and bold text.
+- `app/globals.css` contains the responsive chat layout and visual styling; `app/layout.js` sets the page metadata.
+- `app/api/chat/route.js` is a server-side OpenAI route retained in the codebase, but the current chat UI does not call it.
 
-## Learn More
+The current model selector contains `gpt-6.1-sol`, `gpt-6-astra`, `gpt-6-luna`, `gpt-5.4-nano`, and `gpt-6.1-sol-pro`. Model availability can depend on Puter and may change.
 
-To learn more about Next.js, take a look at the following resources:
+## Puter authentication and privacy
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+This prototype does not need an `OPENAI_API_KEY`. Puter may ask each user to sign in or complete phone verification, and Puter controls those requirements. The browser connects to Puter directly, so review Puter's current terms, privacy, and data handling before using this setup with business, customer, or confidential information.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+## Enterprise AI support use cases
 
-## Deploy on Vercel
+An AI support assistant can help employees, customers, and partners find consistent answers to recurring questions, for example:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Product information, setup steps, troubleshooting, and frequently asked questions
+- HR policies, benefits, onboarding, and internal procedures
+- IT help desk guidance and common issue resolution
+- Sales enablement, service details, and approved customer-facing information
+- Operations, compliance procedures, and links to the right forms or teams
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
-# AI_CS
+The assistant can be connected to an enterprise-approved model or service such as Gemini, OpenAI GPT, Anthropic Claude, DeepSeek, or Perplexity, subject to the provider's APIs, deployment options, data policies, and organization approval. A typical integration sends the conversation from a protected server to the provider, rather than exposing credentials in browser code.
+
+To make answers specific to an organization, teams commonly connect an approved knowledge base (for example, policies, product manuals, and support articles) and retrieve relevant passages for each question. This is often called retrieval-augmented generation (RAG). It keeps answers grounded in current source material and can include citations or links. Fine-tuning is a separate option for specific behavior or formats; it is not usually the first choice for frequently changing factual information.
+
+An enterprise-ready implementation should also consider:
+
+- Identity and role-based access, so users only receive information they are allowed to see
+- Source citations, freshness checks, and clear responses when approved sources do not contain an answer
+- Human handoff for sensitive, ambiguous, or unresolved requests
+- Logging and retention rules, privacy review, and protection of confidential information
+- Evaluation and ongoing review of answer quality, safety, and policy compliance
+
+This repository is a UI prototype, not a complete enterprise knowledge integration. It currently has no company document ingestion, retrieval pipeline, user access control, or human escalation workflow. Those need to be designed and implemented for the chosen organization and provider.
