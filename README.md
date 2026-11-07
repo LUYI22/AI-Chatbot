@@ -1,4 +1,4 @@
-# AI Chatbox
+# AI Chatbot
 
 A Next.js chat interface that streams AI answers into a conversational support UI. The current prototype uses Puter.js in the browser, so it does not require the project owner to configure an AI API key or run an AI proxy server.
 
